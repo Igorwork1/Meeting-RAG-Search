@@ -1,6 +1,12 @@
 .venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
 .env
+.env.*
+.python-version
 .idea/
 .vscode/
+.DS_Store
