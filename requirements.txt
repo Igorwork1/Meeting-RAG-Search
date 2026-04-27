@@ -4,3 +4,12 @@ pydantic>=2.6.4
 pandas>=2.2.2
 streamlit>=1.32.2
 plotly>=5.20.0
+
+torch==2.8.0
+torchaudio==2.8.0
+transformers==4.57.1
+pyannote-audio==4.0.0
+torchcodec==0.7.0
+hydra-core
+omegaconf
+sentencepiece
