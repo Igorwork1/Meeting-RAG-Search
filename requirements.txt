@@ -13,3 +13,5 @@ torchcodec==0.7.0
 hydra-core
 omegaconf
 sentencepiece
+langchain
+langchain-openai

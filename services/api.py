@@ -91,6 +91,7 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
         "file": job["file"],
     }
 
+
 def chat(message: str, conversation_id: Optional[str] = None) -> Dict[str, Any]:
     """Заглушка чата — как было."""
     conv_id = conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
