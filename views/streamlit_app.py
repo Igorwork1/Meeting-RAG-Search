@@ -1,11 +1,4 @@
 import streamlit as st
-from pathlib import Path
-import sys
-
-# Allow running Streamlit from `views/` while importing top-level modules like `services.*`
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
 
 # ---SHARED ON ALL PAGES ---
 st.set_page_config(page_title="MetaPromt: CyberEcho", layout="wide")
@@ -31,12 +24,12 @@ project_2_page = st.Page(
     icon = ":material/smart_toy:",
 )
 
-# -- NAVIAGATION SETUP [WITH SECTIONS] ---
+# -- NAVIGATION SETUP [WITH SECTIONS] ---
 pg = st.navigation(
     {
         "Tools": [project_1_page, project_2_page],
         "Info": [about_service],
     }
 )
-# -- NAVIAGATION RUN ---
+# -- NAVIGATION RUN ---
 pg.run()

@@ -1,12 +1,13 @@
 import streamlit as st
-from pathlib import Path
-import sys
 
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+try:
+    from services.api import chat
+except ModuleNotFoundError:
+    import sys
+    from pathlib import Path
 
-from services.api import chat
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from services.api import chat
 
 st.title("Chat Bot")
 

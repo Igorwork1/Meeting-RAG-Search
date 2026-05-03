@@ -1,8 +1,6 @@
 import streamlit as st
 
-
-# --- Header / hero
-st.title("About Service")
+# --- Header / herost.title("About Service")
 st.caption("Для тех, кто заходит впервые: что это, как работает и что можно спрашивать.")
 
 # Немного “не стандартных” штук: popover + toast + tabs + expander + metric + status
