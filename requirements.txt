@@ -17,3 +17,9 @@ python-dotenv
 
 langchain
 langchain-openai
+
+sentence-transformers==5.1.1
+accelerate
+psycopg[binary]
+pgvector
+numpy
