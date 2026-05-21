@@ -1,6 +1,8 @@
 fastapi>=0.110.0
 uvicorn>=0.29.0
 pydantic>=2.6.4
+httpx>=0.27.0
+python-multipart>=0.0.9
 pandas>=2.2.2
 streamlit>=1.32.2
 plotly>=5.20.0
@@ -14,6 +16,8 @@ hydra-core
 omegaconf
 sentencepiece
 python-dotenv
+rapidfuzz
+dateparser
 
 langchain
 langchain-openai
@@ -21,5 +25,6 @@ langchain-openai
 sentence-transformers==5.1.1
 accelerate
 psycopg[binary]
+psycopg2-binary
 pgvector
 numpy

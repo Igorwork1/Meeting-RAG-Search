@@ -1,85 +1,42 @@
-import time
 from datetime import date
 
 import streamlit as st
 
 try:
-    from services.api import upload_audio, get_job_status, UploadMeta
+    from services.api import transcribe_audio, check_api_health, UploadMeta
+    from services.db import save_meeting_record
 except ModuleNotFoundError:
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from services.api import upload_audio, get_job_status, UploadMeta
-
-POLL_INTERVAL_SEC = 8  # фиксированный polling раз в 8 секунд
+    from services.api import transcribe_audio, check_api_health, UploadMeta
+    from services.db import save_meeting_record
 
 
 st.title("Download Recall")
 st.caption("Загрузка аудио + метаданные (дата, название, описание)")
 
-# --- session state init
-if "active_job_id" not in st.session_state:
-    st.session_state.active_job_id = None
-if "last_job_id" not in st.session_state:
-    st.session_state.last_job_id = ""
+if not check_api_health():
+    st.warning(
+        "Бэкенд транскрибации не запущен. "
+        "В отдельном терминале: `uvicorn services.transcribe:app --host 127.0.0.1 --port 8000`"
+    )
 
+# Только краткий итог после сохранения (без транскрипта и суммаризации на экране)
+if "last_success" not in st.session_state:
+    st.session_state.last_success = None
 
-# --- если есть активный job — покажем прогресс + авто-обновление
-active_status = None
-is_processing = False
-
-if st.session_state.active_job_id:
-    active_status = get_job_status(st.session_state.active_job_id)
-    status = active_status.get("status")
-
-    if status == "processing":
-        is_processing = True
-
-        stage = active_status.get("stage", "processing")
-        stage_i = active_status.get("stage_index", 1)
-        stage_total = active_status.get("stage_total", 1)
-        overall = float(active_status.get("progress", 0.0))
-
-        st.info(f"⏳ Обработка идёт. Job: `{st.session_state.active_job_id}`")
-        st.progress(overall)
-        st.write(f"Этап: **{stage}** ({stage_i}/{stage_total})")
-
-        with st.expander("Детали"):
-            st.write(active_status.get("meta", {}))
-            st.write(active_status.get("file", {}))
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("🔄 Обновить сейчас"):
-                st.rerun()
-        with col2:
-            if st.button("🧹 Сбросить job (если зависло)"):
-                # Для MVP — просто очистка состояния UI.
-                # В реальном бэке лучше: /cancel или /jobs/{id}/cancel
-                st.session_state.active_job_id = None
-                st.rerun()
-
-        # --- авто polling (MVP): раз в 8 секунд дергаем статус
-        time.sleep(POLL_INTERVAL_SEC)
+if st.session_state.last_success:
+    info = st.session_state.last_success
+    st.success(
+        f"Встреча **{info.get('title', '—')}** ({info.get('date', '')}) "
+        f"сохранена в БД. id: `{info.get('id')}`"
+    )
+    if st.button("Загрузить ещё одну встречу"):
+        st.session_state.last_success = None
         st.rerun()
-
-    elif status == "done":
-        st.success(f"✅ Готово! Job: `{st.session_state.active_job_id}`")
-        res = active_status.get("result", {})
-        st.write(res.get("transcript_preview", ""))
-
-        # освобождаем upload
-        st.session_state.active_job_id = None
-
-    elif status == "not_found":
-        st.warning("Job не найден. Возможно, был сброшен или потерян.")
-        st.session_state.active_job_id = None
-
-st.divider()
-
-# --- upload form (блокируем, пока processing)
-disable_upload = is_processing
+    st.divider()
 
 with st.form("upload_form", clear_on_submit=False):
     audio_file = st.file_uploader(
@@ -87,25 +44,26 @@ with st.form("upload_form", clear_on_submit=False):
         type=["mp3", "wav"],
         accept_multiple_files=False,
         help="Поддерживаются MP3/WAV.",
-        disabled=disable_upload,
     )
 
     col1, col2 = st.columns([1, 2])
     with col1:
-        meeting_date = st.date_input("Дата", value=date.today(), disabled=disable_upload)
+        meeting_date = st.date_input("Дата", value=date.today())
     with col2:
-        title = st.text_input("Название (обязательно)", disabled=disable_upload)
+        title = st.text_input("Название (обязательно)")
 
-    description = st.text_area("Краткое описание (опционально)", disabled=disable_upload)
+    description = st.text_area("Краткое описание (опционально)")
 
-    submit = st.form_submit_button("Load / Upload", disabled=disable_upload)
+    submit = st.form_submit_button("Транскрибировать и сохранить")
 
-# косметика (опционально)
-st.markdown("""
+st.markdown(
+    """
 <style>
 div[data-testid="stFileUploaderDropzoneInstructions"] { display: none; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 if submit:
     if audio_file is None:
@@ -121,16 +79,32 @@ if submit:
         description=description.strip(),
     )
 
-    job_id = upload_audio(
-        file_name=audio_file.name,
-        file_bytes=audio_file.getvalue(),
-        mime_type=audio_file.type or "application/octet-stream",
-        meta=meta,
-    )
+    try:
+        with st.spinner("Обработка: транскрибация → суммаризация → сохранение в БД…"):
+            result = transcribe_audio(
+                file_name=audio_file.name,
+                file_bytes=audio_file.getvalue(),
+                mime_type=audio_file.type or "application/octet-stream",
+                meta=meta,
+            )
+            meta_dict = result.get(
+                "meta",
+                {"date": meta.date, "title": meta.title, "description": meta.description},
+            )
+            meta_dict["file_name"] = audio_file.name
 
-    st.session_state.active_job_id = job_id
-    st.session_state.last_job_id = job_id
-    st.success(f"Задача создана: `{job_id}`")
+            saved = save_meeting_record(
+                result.get("transcript", ""),
+                meta_dict,
+                file_name=audio_file.name,
+            )
+    except Exception as e:
+        st.error(f"Ошибка: {e}")
+        st.stop()
 
-    # сразу обновимся, чтобы увидеть прогресс
+    st.session_state.last_success = {
+        "id": saved.get("id"),
+        "title": meta.title,
+        "date": meta.date,
+    }
     st.rerun()
