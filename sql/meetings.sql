@@ -1,0 +1,17 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS cyberecho_meetings (
+    id SERIAL PRIMARY KEY,
+    date_of_the_meeting TIMESTAMP,
+    name_of_the_meeting VARCHAR(255),
+    description TEXT,
+    summary_text TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cyberecho_meeting_chunks (
+    id SERIAL PRIMARY KEY,
+    meeting_id INTEGER NOT NULL REFERENCES cyberecho_meetings(id) ON DELETE CASCADE,
+    chunk_index INTEGER,
+    chunk_text TEXT,
+    embedding VECTOR(2048)
+);
