@@ -5,7 +5,7 @@ PostgreSQL: cyberecho_meetings + cyberecho_meeting_chunks.
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, Callable
 import os
 
 from dotenv import load_dotenv
@@ -99,6 +99,7 @@ def ensure_meetings_tables() -> None:
         date_of_the_meeting TIMESTAMP,
         name_of_the_meeting VARCHAR(255),
         description TEXT,
+        participants TEXT DEFAULT '',
         summary_text TEXT
     );
 
@@ -115,6 +116,12 @@ def ensure_meetings_tables() -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(sql)
+            cur.execute(
+                f"""
+                ALTER TABLE {_full_table(MEETINGS_TABLE)}
+                ADD COLUMN IF NOT EXISTS participants TEXT DEFAULT ''
+                """
+            )
         conn.commit()
     finally:
         conn.close()
@@ -137,12 +144,18 @@ def save_meeting_record(
     meta: dict[str, Any],
     *,
     file_name: str | None = None,
+    on_progress: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
     """
     1) Суммаризация (summarize.py)
     2) Эмбеддинги для каждого чанка
     3) INSERT в cyberecho_meetings и cyberecho_meeting_chunks
     """
+
+    def _report(stage: str, message: str = "") -> None:
+        if on_progress:
+            on_progress(stage, message)
+
     check = check_db_connection()
     if not check["ok"]:
         raise RuntimeError(
@@ -153,6 +166,7 @@ def save_meeting_record(
     from services.embeddings import embed_texts, vector_to_pg
     from services.summarize import build_meeting_json
 
+    _report("summarizing", "LLM формирует структуру встречи…")
     data = build_meeting_json(transcript, meta, file_name=file_name)
     chunks = data.get("chunks") or []
 
@@ -160,30 +174,40 @@ def save_meeting_record(
         raise ValueError("Нет чанков для сохранения — проверь формат суммаризации")
 
     chunk_texts = [c["chunk_text"] for c in chunks]
+    _report("embedding", f"Векторизация {len(chunk_texts)} фрагментов…")
     vectors = embed_texts(chunk_texts)
     if len(vectors) != len(chunks):
         raise RuntimeError("Число эмбеддингов не совпало с числом чанков")
 
     meeting_dt = _parse_meeting_datetime(data.get("date_of_the_meeting", ""))
 
+    _report("saving", "Запись встречи и чанков в PostgreSQL…")
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                ALTER TABLE {_full_table(MEETINGS_TABLE)}
+                ADD COLUMN IF NOT EXISTS participants TEXT DEFAULT ''
+                """
+            )
             cur.execute(
                 f"""
                 INSERT INTO {_full_table(MEETINGS_TABLE)} (
                     date_of_the_meeting,
                     name_of_the_meeting,
                     description,
+                    participants,
                     summary_text
                 )
-                VALUES (%s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     meeting_dt,
                     data.get("name_of_the_meeting", ""),
                     data.get("description", ""),
+                    data.get("participants", ""),
                     data.get("summary_text", ""),
                 ),
             )
@@ -217,6 +241,7 @@ def save_meeting_record(
         "date_of_the_meeting": data.get("date_of_the_meeting"),
         "name_of_the_meeting": data.get("name_of_the_meeting"),
         "description": data.get("description"),
+        "participants": data.get("participants", ""),
         "summary_text": data.get("summary_text"),
         "summary": data.get("summary_text"),
         "transcript": data.get("transcript", ""),
@@ -225,6 +250,7 @@ def save_meeting_record(
             "date": data.get("date_of_the_meeting"),
             "title": data.get("name_of_the_meeting"),
             "description": data.get("description"),
+            "participants": data.get("participants", ""),
             "file_name": data.get("file_name", ""),
         },
     }

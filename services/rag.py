@@ -101,7 +101,8 @@ def search_documents(parsed: ParsedQuery, top_k: int | None = None) -> list[Docu
             m.id AS meeting_id,
             m.name_of_the_meeting,
             m.date_of_the_meeting,
-            m.description
+            m.description,
+            m.participants
         FROM {DB_SCHEMA}.{CHUNKS_TABLE} mc
         JOIN {DB_SCHEMA}.{MEETINGS_TABLE} m ON m.id = mc.meeting_id
         WHERE {where_sql}
@@ -131,6 +132,7 @@ def search_documents(parsed: ParsedQuery, top_k: int | None = None) -> list[Docu
                     "meeting_date": date_str,
                     "chunk_index": row.get("chunk_index"),
                     "description": row.get("description", ""),
+                    "participants": row.get("participants", ""),
                 },
             )
         )

@@ -56,11 +56,12 @@ def _build_llm() -> ChatOpenAI:
 
 
 def _format_meta(meta: dict[str, Any]) -> dict[str, str]:
-    """Поля как в recall.py: дата, название, описание."""
+    """Поля как в recall.py: дата, название, описание, участники."""
     return {
         "date": str(meta.get("date", "")).strip() or "—",
         "title": str(meta.get("title", "")).strip() or "—",
         "description": str(meta.get("description", "")).strip() or "—",
+        "participants": str(meta.get("participants", "")).strip() or "—",
     }
 
 
@@ -82,6 +83,7 @@ def summarize_meeting(transcript: str, meta: dict[str, Any]) -> str:
     system_text = system_text.replace("{date}", fields["date"])
     system_text = system_text.replace("{title}", fields["title"])
     system_text = system_text.replace("{description}", fields["description"])
+    system_text = system_text.replace("{participants}", fields["participants"])
 
     user_text = f"""
 Ниже полный транскрипт встречи. Сделай суммаризацию строго по формату из инструкции.
@@ -91,6 +93,7 @@ def summarize_meeting(transcript: str, meta: dict[str, Any]) -> str:
 Дата: {fields["date"]}
 Название: {fields["title"]}
 Описание: {fields["description"]}
+Участники: {fields["participants"]}
 
 === ТРАНСКРИПТ ===
 {transcript}
@@ -150,6 +153,7 @@ def build_meeting_json(
         "date_of_the_meeting": fields["date"],
         "name_of_the_meeting": fields["title"],
         "description": fields["description"],
+        "participants": fields["participants"],
         "summary_text": summary_text,
         "transcript": transcript.strip(),
         "chunks": chunks,

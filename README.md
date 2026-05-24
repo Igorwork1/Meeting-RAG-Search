@@ -120,7 +120,76 @@
 
 Клиентская часть (Frontend): **Streamlit**
 
-База данных (Database): **PostgreSQL или Superbase**
+База данных (Database): **PostgreSQL** (pgvector)
+
+---
+
+# Запуск проекта
+
+## Подготовка (один раз)
+
+1. Клонировать репозиторий и перейти в папку проекта.
+2. Создать и активировать виртуальное окружение:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+3. Создать файл `.env` в корне проекта (можно скопировать из примера у команды). Минимум нужны:
+   - `POSTGRES_CONNECTION_STRING` — подключение к PostgreSQL
+   - `RUVDS_DE_LITELLM_BASE_URL`, `RUVDS_DE_LITELLM_MODEL`, `RUVDS_DE_LITELLM_METAPROMT_BULLEAD_KEY` — LLM для суммаризации и чата
+   - `API_URL=http://127.0.0.1:8000` — адрес бэкенда
+   - `GIGA_EMBEDDING_MODEL`, `TRANSCRIBE_CHUNK_SECONDS` — по желанию
+
+4. Установить **ffmpeg** и добавить в PATH (нужен для нарезки аудио).
+
+5. Проверить БД:
+
+```powershell
+python -c "from services.db import check_db_connection; print(check_db_connection())"
+```
+
+Должно быть `ok: True` и таблицы `cyberecho_meetings`, `cyberecho_meeting_chunks`.
+
+## Backend (FastAPI)
+
+Запускается в **отдельном терминале** из корня проекта:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+uvicorn services.main:app --host 127.0.0.1 --port 8000
+```
+
+Проверка:
+- `http://127.0.0.1:8000/health` → `{"status":"ok"}`
+- `http://127.0.0.1:8000/docs` — Swagger UI
+
+Основные ручки:
+- `POST /api/meetings/process` — загрузка аудио (обработка в фоне)
+- `GET /api/meetings/jobs/{job_id}` — статус фоновой задачи
+- `POST /api/chat/ask` — RAG-чат
+
+## Frontend (Streamlit)
+
+Запускается во **втором терминале**:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+streamlit run views/streamlit_app.py
+```
+
+Откроется браузер (обычно `http://localhost:8501`).
+
+Страницы:
+- **Download Page** — загрузка mp3/wav, метаданные, запуск обработки в фоне
+- **Chat Bot** — вопросы по сохранённым встречам (можно открыть, пока идёт обработка файла)
+- **About Service** — описание сервиса
+
+> **Важно:** сначала поднять backend (`uvicorn`), затем Streamlit. Без бэкенда загрузка аудио не работает.
+
+---
 
 # Используемые модели
 
@@ -137,9 +206,48 @@ Embeddings | Giga Embeddings / OpenAI Embeddings
 
 # Тестирование
 
-Для оценки работоспособности системы проводится нагрузочное тестирование с помощью инструмента Locust
+## Нагрузочное тестирование (Locust)
 
-Тестирование RAG-архитектуры:
+Сценарии в `tests/locustfile.py`. **Сначала запустите backend** (`uvicorn`), затем Locust — в **третьем терминале** из корня проекта:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install locust
+locust -f tests/locustfile.py --host http://127.0.0.1:8000
+```
+
+Откроется веб-интерфейс: [http://localhost:8089](http://localhost:8089). Укажите число пользователей (Users) и скорость разгона (Spawn rate), нажмите **Start swarming**.
+
+Альтернатива без UI (headless):
+
+```powershell
+locust -f tests/locustfile.py --host http://127.0.0.1:8000 --headless -u 10 -r 2 -t 60s
+```
+
+- `-u 10` — 10 виртуальных пользователей  
+- `-r 2` — по 2 пользователя в секунду при старте  
+- `-t 60s` — длительность теста  
+
+По умолчанию Locust нагружает «лёгкие» ручки: `/health`, `/db/health`, `POST /api/chat/ask`, опрос статуса jobs.
+
+**Тяжёлые сценарии** (транскрибация и полный пайплайн встречи) — только при явном включении:
+
+```powershell
+$env:LOCUST_HEAVY="1"
+$env:LOCUST_AUDIO_PATH="C:\path\to\sample.mp3"
+locust -f tests/locustfile.py --host http://127.0.0.1:8000
+```
+
+Без `LOCUST_AUDIO_PATH` для тяжёлых тестов подставляется короткий синтетический WAV.
+
+Тот же запуск через Python-модуль (если команда `locust` не в PATH):
+
+```powershell
+python -m locust -f tests/locustfile.py --host http://127.0.0.1:8000
+```
+
+## Тестирование RAG-архитектуры
+
 - релевантность поиска
 - точность извлечения информации
 - корректность ответов LLM
