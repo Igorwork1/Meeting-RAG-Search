@@ -28,3 +28,6 @@ psycopg[binary]
 psycopg2-binary
 pgvector
 numpy
+
+# нагрузочное тестирование (tests/locustfile.py)
+locust>=2.44.0

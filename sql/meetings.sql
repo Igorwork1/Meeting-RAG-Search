@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS cyberecho_meetings (
     date_of_the_meeting TIMESTAMP,
     name_of_the_meeting VARCHAR(255),
     description TEXT,
+    participants TEXT DEFAULT '',
     summary_text TEXT
 );
 
@@ -15,3 +16,7 @@ CREATE TABLE IF NOT EXISTS cyberecho_meeting_chunks (
     chunk_text TEXT,
     embedding VECTOR(2048)
 );
+
+-- если таблица уже была без participants:
+ALTER TABLE cyberecho_meetings
+    ADD COLUMN IF NOT EXISTS participants TEXT DEFAULT '';

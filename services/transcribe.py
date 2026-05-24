@@ -1,10 +1,9 @@
 """
-Транскрибация аудио (GigaAM) и FastAPI-бэкенд для загрузки файлов.
-Запуск API: uvicorn services.transcribe:app --host 127.0.0.1 --port 8000
+Транскрибация аудио через GigaAM (только логика, без HTTP).
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 from pathlib import Path
 import os
 import shutil
@@ -12,10 +11,7 @@ import subprocess
 import tempfile
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoModel
-import uvicorn
 
 load_dotenv()
 
@@ -96,7 +92,6 @@ def _transcribe_wav(model, wav_path: str) -> str:
         if "Too long" not in str(e):
             raise
 
-    # запасной вариант: ещё мельче нарезка одного чанка
     print(f"[transcribe] re-split (5s): {wav_path}")
     with tempfile.TemporaryDirectory(prefix="gigaam_sub_") as subdir:
         sub_chunks = _split_audio_to_chunks(wav_path, subdir, chunk_seconds=5)
@@ -116,25 +111,33 @@ def transcribe_file(
     *,
     revision: str = "e2e_rnnt",
     chunk_seconds: int | None = None,
+    on_progress: Callable[[str, str], None] | None = None,
 ) -> str:
-    """
-    Транскрибирует mp3/wav через нарезку ffmpeg (короткие сегменты для GigaAM).
-    """
+    """Транскрибирует mp3/wav через нарезку ffmpeg."""
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
+    def _report(stage: str, message: str = "") -> None:
+        if on_progress:
+            on_progress(stage, message)
+
     chunk_seconds = chunk_seconds or DEFAULT_CHUNK_SECONDS
+
+    _report("loading_model", "Загрузка GigaAM-v3…")
     model = get_gigaam_model(revision=revision)
     parts: list[str] = []
 
     with tempfile.TemporaryDirectory(prefix="gigaam_chunks_") as tmpdir:
+        _report("splitting", f"Нарезка на фрагменты по {chunk_seconds} с…")
         chunks = _split_audio_to_chunks(
             audio_path=audio_path,
             chunks_dir=tmpdir,
             chunk_seconds=chunk_seconds,
         )
 
+        total = len(chunks)
         for i, chunk_path in enumerate(chunks, start=1):
+            _report("transcribing", f"Фрагмент {i} из {total}")
             try:
                 text = _transcribe_wav(model, chunk_path)
             except Exception as e:
@@ -155,59 +158,3 @@ def transcribe_file(
 
     print("[transcribe] done")
     return result
-
-
-# --- FastAPI ---
-
-app = FastAPI(title="Cyberecho Transcribe API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
-@app.post("/api/transcribe")
-async def api_transcribe(
-    file: UploadFile = File(...),
-    date: str = Form(""),
-    title: str = Form(""),
-    description: str = Form(""),
-    chunk_seconds: int = Form(DEFAULT_CHUNK_SECONDS),
-):
-    suffix = Path(file.filename or "audio.wav").suffix or ".wav"
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(await file.read())
-        audio_path = tmp.name
-
-    try:
-        transcript = transcribe_file(audio_path, chunk_seconds=chunk_seconds)
-    finally:
-        try:
-            os.unlink(audio_path)
-        except OSError:
-            pass
-
-    return {
-        "status": "done",
-        "meta": {
-            "date": date,
-            "title": title,
-            "description": description,
-            "file_name": file.filename,
-        },
-        "transcript": transcript,
-    }
-
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)

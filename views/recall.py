@@ -1,17 +1,58 @@
+import importlib
 from datetime import date
 
 import streamlit as st
 
 try:
-    from services.api import transcribe_audio, check_api_health, UploadMeta
-    from services.db import save_meeting_record
+    from services import api as services_api
 except ModuleNotFoundError:
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from services.api import transcribe_audio, check_api_health, UploadMeta
-    from services.db import save_meeting_record
+    from services import api as services_api
+
+# Streamlit кэширует модули — подтягиваем актуальный UploadMeta с полем participants
+importlib.reload(services_api)
+process_meeting = services_api.process_meeting
+check_api_health = services_api.check_api_health
+UploadMeta = services_api.UploadMeta
+
+_STEP_ICONS = {
+    "done": "✅",
+    "current": "🔄",
+    "pending": "⬜",
+    "failed": "❌",
+}
+
+
+def _render_job_card(job: dict) -> None:
+    title = job.get("title") or "—"
+    job_id = job.get("job_id", "")
+    status = job.get("status", "")
+    stage_label = job.get("stage_label") or status
+    message = job.get("message", "")
+    pct = job.get("progress_percent", 0)
+
+    st.markdown(f"**{title}** · `{job_id}`")
+    if status in ("queued", "processing"):
+        st.progress(min(max(int(pct), 0), 100) / 100.0, text=stage_label)
+        if message:
+            st.caption(message)
+
+    steps = job.get("steps") or []
+    if steps:
+        for step in steps:
+            icon = _STEP_ICONS.get(step.get("status", ""), "•")
+            label = step.get("label", step.get("id", ""))
+            line = f"{icon} {label}"
+            if step.get("status") == "current" and message and step.get("id") == job.get("stage"):
+                line += f" — _{message}_"
+            st.markdown(line)
+    elif status == "done":
+        st.success("Готово")
+    elif status == "failed":
+        st.error(job.get("error", "неизвестно"))
 
 
 st.title("Download Recall")
@@ -19,22 +60,43 @@ st.caption("Загрузка аудио + метаданные (дата, наз
 
 if not check_api_health():
     st.warning(
-        "Бэкенд транскрибации не запущен. "
-        "В отдельном терминале: `uvicorn services.transcribe:app --host 127.0.0.1 --port 8000`"
+        "Бэкенд не запущен. "
+        "В отдельном терминале: `uvicorn services.main:app --host 127.0.0.1 --port 8000`"
     )
 
-# Только краткий итог после сохранения (без транскрипта и суммаризации на экране)
-if "last_success" not in st.session_state:
-    st.session_state.last_success = None
+if "meeting_jobs" not in st.session_state:
+    st.session_state.meeting_jobs = []
 
-if st.session_state.last_success:
-    info = st.session_state.last_success
-    st.success(
-        f"Встреча **{info.get('title', '—')}** ({info.get('date', '')}) "
-        f"сохранена в БД. id: `{info.get('id')}`"
-    )
-    if st.button("Загрузить ещё одну встречу"):
-        st.session_state.last_success = None
+active = [j for j in st.session_state.meeting_jobs if j.get("status") in ("queued", "processing")]
+done = [j for j in st.session_state.meeting_jobs if j.get("status") == "done"]
+failed = [j for j in st.session_state.meeting_jobs if j.get("status") == "failed"]
+
+if st.session_state.meeting_jobs:
+    st.subheader("Задачи обработки")
+    if active:
+        st.info(
+            f"В фоне: **{len(active)}** — можно перейти в **Chat Bot**, задача не прервётся."
+        )
+        for job in active:
+            with st.container(border=True):
+                _render_job_card(job)
+        if st.button("Обновить статус", key="refresh_jobs"):
+            st.rerun()
+    else:
+        st.caption("Нет активных задач.")
+
+    for job in done:
+        with st.container(border=True):
+            st.success(f"Готово: **{job.get('title', '—')}** · id `{job.get('id')}`")
+            _render_job_card(job)
+
+    for job in failed:
+        with st.container(border=True):
+            st.error(f"Ошибка «{job.get('title', '—')}»: {job.get('error', 'неизвестно')}")
+            _render_job_card(job)
+
+    if st.button("Очистить список задач"):
+        st.session_state.meeting_jobs = []
         st.rerun()
     st.divider()
 
@@ -53,8 +115,9 @@ with st.form("upload_form", clear_on_submit=False):
         title = st.text_input("Название (обязательно)")
 
     description = st.text_area("Краткое описание (опционально)")
+    participants = st.text_input("Участники (опционально)", placeholder="Иван, Мария, …")
 
-    submit = st.form_submit_button("Транскрибировать и сохранить")
+    submit = st.form_submit_button("Запустить обработку")
 
 st.markdown(
     """
@@ -77,34 +140,32 @@ if submit:
         date=meeting_date.isoformat(),
         title=title.strip(),
         description=description.strip(),
+        participants=participants.strip(),
     )
 
     try:
-        with st.spinner("Обработка: транскрибация → суммаризация → сохранение в БД…"):
-            result = transcribe_audio(
+        with st.spinner("Отправка файла на сервер…"):
+            result = process_meeting(
                 file_name=audio_file.name,
                 file_bytes=audio_file.getvalue(),
                 mime_type=audio_file.type or "application/octet-stream",
                 meta=meta,
             )
-            meta_dict = result.get(
-                "meta",
-                {"date": meta.date, "title": meta.title, "description": meta.description},
-            )
-            meta_dict["file_name"] = audio_file.name
-
-            saved = save_meeting_record(
-                result.get("transcript", ""),
-                meta_dict,
-                file_name=audio_file.name,
-            )
     except Exception as e:
         st.error(f"Ошибка: {e}")
         st.stop()
 
-    st.session_state.last_success = {
-        "id": saved.get("id"),
-        "title": meta.title,
-        "date": meta.date,
-    }
+    st.session_state.meeting_jobs.append(
+        {
+            "job_id": result.get("job_id"),
+            "status": result.get("status", "queued"),
+            "title": meta.title,
+            "date": meta.date,
+            "stage": result.get("stage", "queued"),
+            "stage_label": result.get("stage_label", "В очереди"),
+            "steps": result.get("steps", []),
+            "progress_percent": result.get("progress_percent", 0),
+            "message": "",
+        }
+    )
     st.rerun()

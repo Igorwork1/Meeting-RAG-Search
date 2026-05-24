@@ -1,6 +1,6 @@
 import streamlit as st
 
-# --- Header / herost.title("About Service")
+st.title("About Service")
 st.caption("Для тех, кто заходит впервые: что это, как работает и что можно спрашивать.")
 
 # Немного “не стандартных” штук: popover + toast + tabs + expander + metric + status
@@ -36,7 +36,7 @@ with right:
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Формат", "Аудио", help="MP3/WAV и др. (зависит от бэка)")
-    c2.metric("Длина", "~1 час", help="Типичный кейс")
+    c2.metric("Длина", "~2 часа", help="Типичный кейс")
     c3.metric("Результат", "Текст", help="Транскрипт и дальнейшая работа в чате")
 
 st.divider()
