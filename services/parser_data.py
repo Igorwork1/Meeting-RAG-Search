@@ -230,7 +230,7 @@ def extract_object_type(text: str) -> Optional[str]:
 
 def extract_recency_rule(text: str) -> tuple[Optional[str], Optional[int]]:
     if any(x in text for x in ["последний", "последнем", "последняя", "последнюю"]):
-        return "date_of_the_meeting_desc", 1
+        return "date_of_the_meeting_desc", 3
 
     return None, None
 

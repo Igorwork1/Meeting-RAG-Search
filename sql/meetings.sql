@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS cyberecho_meeting_chunks (
     embedding VECTOR(2048)
 );
 
+CREATE TABLE IF NOT EXISTS cyberecho_meeting_asks (
+    id SERIAL PRIMARY KEY,
+    question TEXT,
+    answer TEXT
+);
+
 -- если таблица уже была без participants:
 ALTER TABLE cyberecho_meetings
     ADD COLUMN IF NOT EXISTS participants TEXT DEFAULT '';
