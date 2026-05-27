@@ -17,6 +17,7 @@ load_dotenv()
 DB_SCHEMA = os.getenv("SCHEMA", "public").strip()
 MEETINGS_TABLE = os.getenv("MEETINGS_TABLE", "cyberecho_meetings").strip()
 CHUNKS_TABLE = os.getenv("CHUNKS_TABLE", "cyberecho_meeting_chunks").strip()
+ASKS_TABLE = os.getenv("ASKS_TABLE", "cyberecho_meeting_asks").strip()
 EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "2048"))
 
 
@@ -43,7 +44,7 @@ def _full_table(name: str) -> str:
 
 def check_db_connection() -> dict[str, Any]:
     """
-    Проверка подключения и наличия таблиц cyberecho_meetings / cyberecho_meeting_chunks.
+    Проверка подключения и наличия таблиц cyberecho_meetings / cyberecho_meeting_chunks / cyberecho_meeting_asks.
     """
     conn = get_db_connection()
     try:
@@ -56,31 +57,39 @@ def check_db_connection() -> dict[str, Any]:
                 SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = %s
-                  AND table_name IN (%s, %s)
+                  AND table_name IN (%s, %s, %s)
                 ORDER BY table_name
                 """,
-                (DB_SCHEMA, MEETINGS_TABLE, CHUNKS_TABLE),
+                (DB_SCHEMA, MEETINGS_TABLE, CHUNKS_TABLE, ASKS_TABLE),
             )
             found_tables = [r["table_name"] for r in cur.fetchall()]
 
             meetings_count = None
             chunks_count = None
+            asks_count = None
             if MEETINGS_TABLE in found_tables:
                 cur.execute(f"SELECT COUNT(*) AS c FROM {_full_table(MEETINGS_TABLE)}")
                 meetings_count = cur.fetchone()["c"]
             if CHUNKS_TABLE in found_tables:
                 cur.execute(f"SELECT COUNT(*) AS c FROM {_full_table(CHUNKS_TABLE)}")
                 chunks_count = cur.fetchone()["c"]
+            if ASKS_TABLE in found_tables:
+                cur.execute(f"SELECT COUNT(*) AS c FROM {_full_table(ASKS_TABLE)}")
+                asks_count = cur.fetchone()["c"]
 
         return {
-            "ok": MEETINGS_TABLE in found_tables and CHUNKS_TABLE in found_tables,
+            "ok": MEETINGS_TABLE in found_tables
+            and CHUNKS_TABLE in found_tables
+            and ASKS_TABLE in found_tables,
             "version": version,
             "schema": DB_SCHEMA,
             "tables_found": found_tables,
             "meetings_table": MEETINGS_TABLE,
             "chunks_table": CHUNKS_TABLE,
+            "asks_table": ASKS_TABLE,
             "meetings_count": meetings_count,
             "chunks_count": chunks_count,
+            "asks_count": asks_count,
         }
     finally:
         conn.close()
@@ -110,6 +119,12 @@ def ensure_meetings_tables() -> None:
         chunk_text TEXT,
         embedding VECTOR({EMBEDDING_DIM})
     );
+
+    CREATE TABLE IF NOT EXISTS {_full_table(ASKS_TABLE)} (
+        id SERIAL PRIMARY KEY,
+        question TEXT,
+        answer TEXT
+    );
     """
 
     conn = get_db_connection()
@@ -123,6 +138,37 @@ def ensure_meetings_tables() -> None:
                 """
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def save_meeting_ask(question: str, answer: str) -> int | None:
+    """
+    Сохраняет вопрос пользователя и ответ чат-бота в cyberecho_meeting_asks.
+    Возвращает id вставленной записи (или None, если вставка не удалась).
+    """
+    question = (question or "").strip()
+    answer = (answer or "").strip()
+    if not question or not answer:
+        return None
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {_full_table(ASKS_TABLE)} (question, answer)
+                VALUES (%s, %s)
+                RETURNING id
+                """,
+                (question, answer),
+            )
+            new_id = cur.fetchone()[0]
+        conn.commit()
+        return int(new_id)
+    except Exception:
+        conn.rollback()
+        return None
     finally:
         conn.close()
 
