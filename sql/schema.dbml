@@ -1,0 +1,25 @@
+// Структура базы данных CyberEcho
+// Диаграмма для dbdiagram.io / DBML-редакторов (не исполняемый SQL).
+
+Table cyberecho_meetings {
+  id integer [primary key]
+  date_of_the_meeting timestamp
+  name_of_the_meeting varchar(255)
+  description text
+  participants text
+  summary_text text
+}
+
+Table cyberecho_meeting_chunks {
+  id integer [primary key]
+  meeting_id integer [ref: > cyberecho_meetings.id]
+  chunk_index integer
+  chunk_text text
+  embedding "vector(2048)"
+}
+
+Table cyberecho_meeting_asks {
+  id integer [primary key]
+  question text
+  answer text
+}
