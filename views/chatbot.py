@@ -10,7 +10,7 @@ except ModuleNotFoundError:
     from services.api import ask_chat
 
 
-st.title("Chat Bot")
+st.title("Чат")
 st.caption("Вопросы по сохранённым созвонам (RAG)")
 
 

@@ -1,7 +1,7 @@
 import streamlit as st
 
-st.set_page_config(page_title="MetaPromt: CyberEcho", layout="wide")
-st.sidebar.text("Service for the team")
+st.set_page_config(page_title="MetaPrompt: КиберЭхо", layout="wide")
+st.sidebar.text("Сервис для команды")
 
 
 def _refresh_meeting_jobs() -> None:
@@ -51,27 +51,27 @@ if active:
 
 about_service = st.Page(
     page="about_service.py",
-    title="About Service",
+    title="О сервисе",
     icon=":material/info:",
     default=True,
 )
 
 project_1_page = st.Page(
     page="recall.py",
-    title="Download Page",
+    title="Загрузка",
     icon=":material/download:",
 )
 
 project_2_page = st.Page(
     page="chatbot.py",
-    title="Chat Bot",
+    title="Чат",
     icon=":material/smart_toy:",
 )
 
 pg = st.navigation(
     {
-        "Tools": [project_1_page, project_2_page],
-        "Info": [about_service],
+        "Инструменты": [project_1_page, project_2_page],
+        "Справка": [about_service],
     }
 )
 pg.run()
