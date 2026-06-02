@@ -55,7 +55,7 @@ def _render_job_card(job: dict) -> None:
         st.error(job.get("error", "неизвестно"))
 
 
-st.title("Download Recall")
+st.title("Загрузка")
 st.caption("Загрузка аудио + метаданные (дата, название, описание)")
 
 if not check_api_health():
@@ -75,7 +75,7 @@ if st.session_state.meeting_jobs:
     st.subheader("Задачи обработки")
     if active:
         st.info(
-            f"В фоне: **{len(active)}** — можно перейти в **Chat Bot**, задача не прервётся."
+            f"В фоне: **{len(active)}** — можно перейти в **Чат**, задача не прервётся."
         )
         for job in active:
             with st.container(border=True):
