@@ -17,5 +17,5 @@ class ChatRequest(BaseModel):
 
 @router.post("/ask")
 def chat_ask(body: ChatRequest):
-    """Вопрос → parser_data → поиск в БД → ответ LLM."""
+    """Вопрос → LLM-препроцессинг → поиск в БД → ответ LLM."""
     return ask(body.question, chat_history=body.chat_history)

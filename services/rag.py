@@ -1,5 +1,5 @@
 """
-Простой RAG по встречам: parser_data → поиск в pgvector → ответ LLM (LangChain).
+Простой RAG по встречам: LLM-препроцессинг запроса → поиск в pgvector → ответ LLM (LangChain).
 """
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ from services.db import (
     save_meeting_ask,
 )
 from services.embeddings import embed_query, vector_to_pg
-from services.parser_data import ParsedQuery, parse_user_query
+from services.query_preprocess import PreprocessedQuery, preprocess_user_question
 from services.summarize import _build_llm
 
 load_dotenv()
 
 TOP_K = int(os.getenv("TOP_K", "5"))
 
-# Подсказки LLM по типу вопроса (intent из parser_data)
+# Подсказки LLM по типу вопроса (intent из LLM-препроцессинга)
 INTENT_HINTS = {
     "meeting_summary": "Сфокусируйся на обзоре и итогах встречи.",
     "decisions_search": "Выдели принятые решения и договорённости.",
@@ -35,32 +35,32 @@ INTENT_HINTS = {
 }
 
 
-def _parsed_to_dict(parsed: ParsedQuery) -> dict[str, Any]:
-    """Для UI / отладки — что извлек парсер."""
+def _parsed_to_dict(parsed: PreprocessedQuery) -> dict[str, Any]:
+    """Для UI / отладки — что извлек препроцессор."""
     return {
-        "original_query": parsed.original_query,
-        "normalized_query": parsed.normalized_query,
+        "original_query": parsed.original_question,
+        "normalized_query": parsed.normalized_question,
         "semantic_query": parsed.semantic_query,
         "intent": parsed.intent,
+        "date": parsed.date.isoformat() if parsed.date else None,
         "date_from": parsed.date_from.isoformat() if parsed.date_from else None,
         "date_to": parsed.date_to.isoformat() if parsed.date_to else None,
-        "sort_by": parsed.sort_by,
-        "limit": parsed.limit,
-        "corrected_terms": parsed.corrected_terms,
     }
 
 
-def _parser_context(parsed: ParsedQuery) -> str:
+def _parser_context(parsed: PreprocessedQuery) -> str:
     """Кратко описывает, как понят вопрос (для промпта LLM)."""
     lines = [f"Тип вопроса: {parsed.intent}."]
-    if parsed.date_from:
+    if parsed.date_from or parsed.date_to:
+        start = parsed.date_from or parsed.date_to
         end = parsed.date_to or parsed.date_from
-        lines.append(f"Фильтр по дате встречи: с {parsed.date_from} по {end}.")
-    if parsed.sort_by == "date_of_the_meeting_desc":
-        lines.append("Нужна информация с последней по дате встречи.")
-    if parsed.corrected_terms:
-        fixes = ", ".join(f"{k}→{v}" for k, v in parsed.corrected_terms.items())
-        lines.append(f"Исправлены опечатки: {fixes}.")
+        if start and end and start == end:
+            lines.append(f"Фильтр по дате встречи: {start}.")
+        elif start and end:
+            lines.append(f"Фильтр по дате встречи: с {start} по {end}.")
+    else:
+        # date всегда выставлен, даже если фильтр не применяем
+        lines.append(f"Дата сейчас (default date): {parsed.date}.")
     return " ".join(lines)
 
 
@@ -71,13 +71,13 @@ def _cosine_similarity_from_distance(distance: float | None) -> float | None:
     return max(0.0, min(1.0, 1.0 - float(distance)))
 
 
-def search_documents(parsed: ParsedQuery, top_k: int | None = None) -> list[Document]:
+def search_documents(parsed: PreprocessedQuery, top_k: int | None = None) -> list[Document]:
     """
     Векторный поиск по cyberecho_meeting_chunks (косинусное расстояние pgvector <=>).
-    Текст для эмбеддинга — semantic_query из parser_data (без «сегодня», «созвон» и т.д.).
+    Текст для эмбеддинга — semantic_query из LLM-препроцессинга.
     """
-    limit = parsed.limit or top_k or TOP_K
-    search_text = (parsed.semantic_query or parsed.original_query).strip()
+    limit = top_k or TOP_K
+    search_text = (parsed.semantic_query or parsed.original_question).strip()
     query_vector = vector_to_pg(embed_query(search_text))
 
     conditions = ["mc.embedding IS NOT NULL"]
@@ -90,14 +90,7 @@ def search_documents(parsed: ParsedQuery, top_k: int | None = None) -> list[Docu
         conditions.append("DATE(m.date_of_the_meeting) <= %s")
         params.append(parsed.date_to)
 
-    # «Последняя встреча» — сначала свежие по дате, внутри — ближе по смыслу (cosine)
-    if parsed.sort_by == "date_of_the_meeting_desc":
-        order_clause = (
-            "m.date_of_the_meeting DESC NULLS LAST, "
-            "mc.embedding <=> %s::vector"
-        )
-    else:
-        order_clause = "mc.embedding <=> %s::vector"
+    order_clause = "mc.embedding <=> %s::vector"
 
     where_sql = " AND ".join(conditions)
     params.extend([query_vector, query_vector, limit])
@@ -251,7 +244,7 @@ def _quotes_from_documents(documents: list[Document]) -> list[str]:
 
 
 def generate_response(
-    parsed: ParsedQuery,
+    parsed: PreprocessedQuery,
     documents: list[Document],
     chat_history: str = "",
 ) -> str:
@@ -293,7 +286,7 @@ def generate_response(
     llm = _build_llm()
     return (prompt | llm).invoke(
         {
-            "user_message": parsed.original_query,
+            "user_message": parsed.original_question,
             "docs_block": docs_block,
             "meeting_summaries_block": meeting_summaries_block,
             "chat_history": chat_history or "—",
@@ -306,15 +299,15 @@ def generate_response(
 def ask(question: str, chat_history: str = "") -> dict[str, Any]:
     """
     Точка входа RAG:
-    1) parse_user_query — нормализация и извлечение дат/intent
-    2) search_documents — поиск по semantic_query
+    1) preprocess_user_question — LLM-препроцессинг (semantic_query + date)
+    2) search_documents — поиск по semantic_query (+ фильтр по датам, если найден)
     3) generate_response — ответ LLM
     """
     question = (question or "").strip()
     if not question:
         raise ValueError("Пустой вопрос")
 
-    parsed = parse_user_query(question)
+    parsed = preprocess_user_question(question)
     documents = search_documents(parsed)
     fallback = (
         "К сожалению, в базе знаний нет информации по этому запросу. "
