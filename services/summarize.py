@@ -39,12 +39,12 @@ def _build_llm() -> ChatOpenAI:
     """Клиент к RUVDS LiteLLM из .env."""
     base_url = _env("RUVDS_DE_LITELLM_BASE_URL")
     model = _env("RUVDS_DE_LITELLM_MODEL")
-    api_key = _env("RUVDS_DE_LITELLM_METAPROMT_BULLEAD_KEY")
+    api_key = _env("RUVDS_DE_LITELLM_METAPROMT_BULLET_KEY")
 
     if not base_url or not model or not api_key:
         raise RuntimeError(
             "Задай в .env: RUVDS_DE_LITELLM_BASE_URL, "
-            "RUVDS_DE_LITELLM_MODEL, RUVDS_DE_LITELLM_METAPROMT_BULLEAD_KEY"
+            "RUVDS_DE_LITELLM_MODEL, RUVDS_DE_LITELLM_METAPROMT_BULLET_KEY"
         )
 
     return ChatOpenAI(
