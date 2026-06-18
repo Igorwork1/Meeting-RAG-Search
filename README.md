@@ -145,7 +145,8 @@ pip install -r requirements.txt
 
 3. Создать файл `.env` в корне проекта (можно скопировать из примера у команды). Минимум нужны:
    - `POSTGRES_CONNECTION_STRING` — подключение к PostgreSQL
-   - `RUVDS_DE_LITELLM_BASE_URL`, `RUVDS_DE_LITELLM_MODEL`, `RUVDS_DE_LITELLM_METAPROMT_BULLET_KEY` — LLM для суммаризации и чата
+   - `RUVDS_DE_LITELLM_BASE_URL`, `RUVDS_DE_LITELLM_MODEL`, `RUVDS_DE_LITELLM_METAPROMT_BULLET_KEY` — основной LLM (LiteLLM)
+   - `YANDEX_API_KEY`, `YANDEX_FOLDER_ID`, `YANDEX_MODEL` — fallback на прямой YandexGPT, если LiteLLM недоступен
    - `API_URL=http://127.0.0.1:8000` — адрес бэкенда
    - `GIGA_EMBEDDING_MODEL`, `TRANSCRIBE_CHUNK_SECONDS` — по желанию
 

@@ -20,7 +20,7 @@ from services.db import (
 )
 from services.embeddings import embed_query, vector_to_pg
 from services.query_preprocess import PreprocessedQuery, preprocess_user_question
-from services.summarize import _build_llm
+from services.summarize import invoke_llm_messages
 
 load_dotenv()
 
@@ -81,7 +81,7 @@ def search_documents(parsed: PreprocessedQuery, top_k: int | None = None) -> lis
     query_vector = vector_to_pg(embed_query(search_text))
 
     conditions = ["mc.embedding IS NOT NULL"]
-    params: list[Any] = []
+    params: list[Any] = [query_vector]  # SELECT: cosine_distance
 
     if parsed.date_from:
         conditions.append("DATE(m.date_of_the_meeting) >= %s")
@@ -91,9 +91,10 @@ def search_documents(parsed: PreprocessedQuery, top_k: int | None = None) -> lis
         params.append(parsed.date_to)
 
     order_clause = "mc.embedding <=> %s::vector"
+    params.append(query_vector)  # ORDER BY
+    params.append(limit)  # LIMIT
 
     where_sql = " AND ".join(conditions)
-    params.extend([query_vector, query_vector, limit])
 
     sql = f"""
         SELECT
@@ -283,17 +284,16 @@ def generate_response(
 """
     )
 
-    llm = _build_llm()
-    return (prompt | llm).invoke(
-        {
-            "user_message": parsed.original_question,
-            "docs_block": docs_block,
-            "meeting_summaries_block": meeting_summaries_block,
-            "chat_history": chat_history or "—",
-            "parser_context": _parser_context(parsed),
-            "intent_hint": intent_hint,
-        }
-    ).content
+    return invoke_llm_messages(
+        prompt.format_messages(
+            user_message=parsed.original_question,
+            docs_block=docs_block,
+            meeting_summaries_block=meeting_summaries_block,
+            chat_history=chat_history or "—",
+            parser_context=_parser_context(parsed),
+            intent_hint=intent_hint,
+        )
+    )
 
 
 def ask(question: str, chat_history: str = "") -> dict[str, Any]:
