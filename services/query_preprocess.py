@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from services.summarize import _build_llm
+from services.summarize import invoke_llm_messages
 
 
 @dataclass
@@ -113,14 +113,12 @@ def preprocess_user_question(question: str, *, now: datetime | None = None) -> P
 - date_from/date_to можно вернуть null.
 """.strip()
 
-    llm = _build_llm()
-    resp = llm.invoke(
+    raw = invoke_llm_messages(
         [
             SystemMessage(content=system_text),
             HumanMessage(content=q),
         ]
     )
-    raw = str(getattr(resp, "content", "")).strip()
     data = _extract_json(raw) or {}
 
     normalized_question = str(data.get("normalized_question") or q).strip() or q
