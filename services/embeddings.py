@@ -19,6 +19,10 @@ _EMBED_DIM: Optional[int] = None
 DEFAULT_MODEL = "ai-sage/Giga-Embeddings-instruct"
 
 
+def is_embedding_model_loaded() -> bool:
+    return _EMBED_MODEL is not None
+
+
 def _model_name() -> str:
     return os.getenv("GIGA_EMBEDDING_MODEL", DEFAULT_MODEL).strip().strip('"')
 
