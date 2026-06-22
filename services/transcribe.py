@@ -22,6 +22,10 @@ _GIGAAM_MODEL = None
 _GIGAAM_REVISION: Optional[str] = None
 
 
+def is_gigaam_loaded() -> bool:
+    return _GIGAAM_MODEL is not None
+
+
 def get_gigaam_model(revision: str = "e2e_rnnt"):
     """Загружает модель один раз и держит в памяти."""
     global _GIGAAM_MODEL, _GIGAAM_REVISION

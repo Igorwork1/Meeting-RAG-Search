@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -15,7 +16,25 @@ from services.routes import chat, meetings, system, transcribe
 
 load_dotenv()
 
-app = FastAPI(title="Cyberecho API", version="1.0")
+
+def _preload_models() -> None:
+    """GigaAM и Giga-Embeddings — один раз при старте uvicorn."""
+    from services.embeddings import get_embedding_model
+    from services.transcribe import get_gigaam_model
+
+    print("[startup] preloading ML models…")
+    get_gigaam_model()
+    get_embedding_model()
+    print("[startup] ML models ready")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _preload_models()
+    yield
+
+
+app = FastAPI(title="Cyberecho API", version="1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
