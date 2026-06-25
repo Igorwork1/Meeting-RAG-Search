@@ -27,7 +27,7 @@ if "messages" not in st.session_state:
         {
             "role": "assistant",
             "content": (
-                "Привет! Я Кибер-помощник команды MetaPrompt. "
+                "Привет! Я Кибер-помощник команды MetaPromt. "
                 "Спроси, что обсуждали на созвонах — поищу в базе встреч."
             ),
         }
