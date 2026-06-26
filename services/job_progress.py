@@ -6,7 +6,7 @@ from typing import Any, Callable
 # (id, подпись для UI)
 PIPELINE_STEPS: list[tuple[str, str]] = [
     ("queued", "В очереди"),
-    ("loading_model", "Загрузка модели GigaAM"),
+    ("loading_model", "Загрузка GigaAM"),
     ("splitting", "Нарезка аудио"),
     ("transcribing", "Транскрибация"),
     ("summarizing", "Суммаризация встречи"),

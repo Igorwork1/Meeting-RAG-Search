@@ -18,7 +18,7 @@ load_dotenv()
 
 
 def _preload_models() -> None:
-    """GigaAM и Giga-Embeddings — один раз при старте uvicorn."""
+    """GigaAM-v3 e2e_ctc и Giga-Embeddings — один раз при старте uvicorn."""
     from services.embeddings import get_embedding_model
     from services.transcribe import get_gigaam_model
 
