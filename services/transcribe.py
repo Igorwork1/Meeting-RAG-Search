@@ -1,9 +1,9 @@
 """
-Транскрибация аудио через GigaAM (только логика, без HTTP).
+Транскрибация аудио через GigaAM-v3 e2e_ctc (только логика, без HTTP).
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 from pathlib import Path
 import os
 import shutil
@@ -15,33 +15,37 @@ from transformers import AutoModel
 
 load_dotenv()
 
-# GigaAM transcribe() падает на длинных wav — режем короткими сегментами (сек)
+# Модель: e2e_ctc — end-to-end CTC с пунктуацией и нормализацией текста.
+# Быстрее e2e_rnnt примерно в 10× на CPU при сопоставимом качестве для встреч.
+# Чтобы сменить вариант — поменяйте GIGAAM_REVISION (доступны: ctc, rnnt, e2e_rnnt).
+GIGAAM_REVISION = "e2e_ctc"
+
+# GigaAM transcribe() падает на wav длиннее 25 с — режем короткими сегментами (сек).
+# Для ускорения можно поднять до 20–22; при пустом транскрипте — уменьшить.
 DEFAULT_CHUNK_SECONDS = int(os.getenv("TRANSCRIBE_CHUNK_SECONDS", "10"))
 
 _GIGAAM_MODEL = None
-_GIGAAM_REVISION: Optional[str] = None
 
 
 def is_gigaam_loaded() -> bool:
     return _GIGAAM_MODEL is not None
 
 
-def get_gigaam_model(revision: str = "e2e_rnnt"):
-    """Загружает модель один раз и держит в памяти."""
-    global _GIGAAM_MODEL, _GIGAAM_REVISION
+def get_gigaam_model():
+    """Загружает GigaAM-v3 (e2e_ctc) один раз и держит в памяти."""
+    global _GIGAAM_MODEL
 
-    if _GIGAAM_MODEL is not None and _GIGAAM_REVISION == revision:
+    if _GIGAAM_MODEL is not None:
         return _GIGAAM_MODEL
 
-    print(f"[transcribe] loading ai-sage/GigaAM-v3 revision={revision!r}")
+    print(f"[transcribe] loading ai-sage/GigaAM-v3 revision={GIGAAM_REVISION!r}")
 
     _GIGAAM_MODEL = AutoModel.from_pretrained(
         "ai-sage/GigaAM-v3",
-        revision=revision,
+        revision=GIGAAM_REVISION,
         trust_remote_code=True,
     )
 
-    _GIGAAM_REVISION = revision
     return _GIGAAM_MODEL
 
 
@@ -113,11 +117,10 @@ def _transcribe_wav(model, wav_path: str) -> str:
 def transcribe_file(
     audio_path: str,
     *,
-    revision: str = "e2e_rnnt",
     chunk_seconds: int | None = None,
     on_progress: Callable[[str, str], None] | None = None,
 ) -> str:
-    """Транскрибирует mp3/wav через нарезку ffmpeg."""
+    """Транскрибирует mp3/wav через GigaAM e2e_ctc и нарезку ffmpeg."""
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
@@ -127,8 +130,8 @@ def transcribe_file(
 
     chunk_seconds = chunk_seconds or DEFAULT_CHUNK_SECONDS
 
-    _report("loading_model", "Загрузка GigaAM-v3…")
-    model = get_gigaam_model(revision=revision)
+    _report("loading_model", "Загрузка GigaAM-v3 (e2e_ctc)…")
+    model = get_gigaam_model()
     parts: list[str] = []
 
     with tempfile.TemporaryDirectory(prefix="gigaam_chunks_") as tmpdir:

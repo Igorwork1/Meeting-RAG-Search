@@ -18,6 +18,12 @@ _EMBED_DIM: Optional[int] = None
 
 DEFAULT_MODEL = "ai-sage/Giga-Embeddings-instruct"
 
+# Instruct-промпт только для поисковых запросов (документы/чанки — без него).
+QUERY_PROMPT = (
+    "Instruct: Дан вопрос пользователя, необходимо найти среди фрагментов "
+    "расшифровок и саммари встреч релевантный фрагмент с ответом\nQuery: "
+)
+
 
 def is_embedding_model_loaded() -> bool:
     return _EMBED_MODEL is not None
@@ -61,10 +67,16 @@ def get_embedding_dimension() -> int:
 
 def embed_query(text: str) -> list[float]:
     """Эмбеддинг одного поискового запроса для RAG."""
-    vectors = embed_texts([text])
-    if not vectors:
+    model = get_embedding_model()
+    vectors = model.encode(
+        [text.strip() or " "],
+        prompt=QUERY_PROMPT,
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+    )
+    if len(vectors) == 0:
         raise ValueError("Не удалось получить эмбеддинг запроса")
-    return vectors[0]
+    return vectors[0].tolist()
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
