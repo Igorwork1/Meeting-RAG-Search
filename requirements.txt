@@ -21,6 +21,8 @@ dateparser
 
 langchain
 langchain-openai
+langchain-text-splitters
+tiktoken
 
 sentence-transformers==5.1.1
 accelerate

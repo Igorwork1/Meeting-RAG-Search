@@ -24,7 +24,7 @@ from services.summarize import invoke_llm_messages
 
 load_dotenv()
 
-TOP_K = int(os.getenv("TOP_K", "5"))
+TOP_K = int(os.getenv("TOP_K", "3"))
 
 # Подсказки LLM по типу вопроса (intent из LLM-препроцессинга)
 INTENT_HINTS = {
